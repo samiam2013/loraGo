@@ -38,6 +38,55 @@ func main() {
 		if _, err := os.Stat(serialPath); err != nil {
 			logrus.WithError(err).Fatal("Couldn't open serial path.")
 		}
+	case "linux":
+		// get the output of lsusb
+		out, err := exec.Command("lsusb").Output()
+		if err != nil {
+			logrus.WithError(err).Fatal("Can't run lsusb command.")
+		}
+		var found bool
+		// range over the lines split by newline characters
+		for _, line := range strings.Split(string(out), "\n") {
+			// if the line contain the string "FT232R Serial (UART)"
+			if strings.Contains(line, "FT232 Serial (UART)") {
+				found = true
+			}
+		}
+		if !found {
+			logrus.Fatal("Couldn't find FT232R Serial (UART)")
+		}
+
+		// check that we're running as root
+		if os.Geteuid() != 0 {
+			logrus.Fatal("You must run this program as root.")
+		}
+		// run 'sudo dmesg | grep "FTDI USB Serial Device converter now attached"'
+		out, err = exec.Command("dmesg").Output()
+		if err != nil {
+			logrus.WithError(err).Fatal("Can't run dmesg command.")
+		}
+
+		// add a variable to keep the last known location of the FTDI device
+		var ftdiPath string
+		// loop over the lines split by newline characters
+		for _, line := range strings.Split(string(out), "\n") {
+			// logrus.Info(line)
+			// if the line contains the string "FTDI USB Serial Device converter now attached"
+			if strings.Contains(line, "FTDI USB Serial Device converter now attached") {
+				// get the last word in the line
+				words := strings.Split(line, " ")
+				// set the ftdiPath variable to the last word
+				ftdiPath = words[len(words)-1]
+				logrus.Infof("Found FTDI device at %s", ftdiPath)
+			}
+		}
+		// check if the ftdiPath variable is empty
+		if ftdiPath == "" {
+			// error
+			logrus.Fatal("Couldn't find FTDI device.")
+		}
+		// set the serialPath variable to the ftdiPath variable
+		serialPath = "/dev/" + ftdiPath
 	default:
 		logrus.Fatalf("Cannot connect to usb ftdi on platform '%s'", runtime.GOOS)
 	}
